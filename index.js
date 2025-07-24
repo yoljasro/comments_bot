@@ -1,14 +1,12 @@
-// kommentPulBot - foydalanuvchini ro'yxatdan o'tkazish, kanalga yo'naltirish va screenshot qabul qilish
-
 import TelegramBot from 'node-telegram-bot-api';
-import fs from 'fs';
 import dotenv from 'dotenv';
 dotenv.config();
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
-const CHANNEL_LINK = 'https://t.me/+rCgOphjq46VhNWIy'; // yopiq kanalga invite-link
+const CHANNEL_LINK = 'https://t.me/+rCgOphjq46VhNWIy';
+const MODERATOR_ID = process.env.MODERATOR_ID;
 
-const users = {}; // vaqtinchalik xotirada
+const users = {};
 
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
@@ -20,6 +18,27 @@ bot.onText(/\/start/, async (msg) => {
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const user = users[chatId];
+
+  // Inline tugmalar orqali kelgan matnlar
+  if (msg.text === '📸 Screenshot yuborish') {
+    return bot.sendMessage(chatId, 'Iltimos, screenshot yuboring.');
+  }
+
+  if (msg.text === '💬 Moderator bilan bog‘lanish') {
+    users[chatId].step = 'contactModerator';
+    return bot.sendMessage(chatId, 'Moderatorga yuboriladigan xabaringizni yozing:');
+  }
+
+  if (user?.step === 'contactModerator') {
+    user.step = 'done';
+    if (MODERATOR_ID) {
+      bot.sendMessage(MODERATOR_ID, `✉️ @${msg.from.username || 'user'} yozdi:\n\n${msg.text}`);
+      return bot.sendMessage(chatId, '✅ Xabaringiz moderatorga yuborildi!');
+    } else {
+      return bot.sendMessage(chatId, '❌ Moderatorga yuborib bo‘lmadi.');
+    }
+  }
+
   if (!user || msg.text?.startsWith('/')) return;
 
   switch (user.step) {
@@ -45,26 +64,33 @@ bot.on('message', async (msg) => {
 📆 To'lov oyda 1 marta
 📢 Kanalga a'zo bo'lish majburiy!
 
-Kanalga o'ting: ${CHANNEL_LINK}`);
+Kanalga o'ting: ${CHANNEL_LINK}`,
+        {
+          reply_markup: {
+            keyboard: [
+              [{ text: '📸 Screenshot yuborish' }],
+              [{ text: '💬 Moderator bilan bog‘lanish' }]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+          }
+        }
+      );
   }
 });
 
-// Foydalanuvchi screenshot yuborganda
+// 📷 Screenshot yuborilganda
 bot.on('photo', async (msg) => {
   const chatId = msg.chat.id;
-  const photo = msg.photo[msg.photo.length - 1]; // eng katta rasm
+  const photo = msg.photo[msg.photo.length - 1];
 
   const fileId = photo.file_id;
   const fileLink = await bot.getFileLink(fileId);
 
-  // log uchun
   console.log(`Screenshot: ${fileLink}`);
 
-  // Moderatsiya uchun yuborish (o'zingizga forward qilishingiz mumkin)
   bot.sendMessage(chatId, '✅ Screenshot qabul qilindi! Rahmat.');
 
-  // Misol: moderatorga yuborish
-  const MODERATOR_ID = process.env.MODERATOR_ID; // .env faylda ID saqlang
   if (MODERATOR_ID) {
     bot.sendPhoto(MODERATOR_ID, fileId, {
       caption: `📥 Screenshot from @${msg.from.username || 'user'} (${chatId})`
